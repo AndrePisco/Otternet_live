@@ -91,7 +91,7 @@ left join history as d on a.creditor_id=d.creditor_id
 select * 
 from data_merge
 where insolvency_flag is true
--- and ticket_id is null
+and ticket_id is null
 and (fds_exposure_current >= 100000 or merchant_payment_amt_gbp_last_365d >= 1000000)
 )
 
