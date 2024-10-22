@@ -92,6 +92,7 @@ select *
             360005611314 as group_id, 
             9724439852828 as requester_id, 
             5636997079964 AS ticket_form_id,
+						4451452073116 as assignee_id,
 
             ARRAY<STRUCT<
                 id INT64, 
@@ -123,15 +124,13 @@ select *
 								-- ||'\n' || ': ' || xxxx
 								-- ||'\n' || ': ' || xxxx
 								-- ||'\n' || ': ' || xxxx
-								-- ||'\n' || ': ' || xxxx
-
-
+								||'\n' || '\n' || '\n' || 'Created by OtterNet'
 								 AS body,
                 false AS public
             ) AS comment,
 
             -- Subject
-            'This is s test do not Panic!!! 1' AS subject
+            'Credit Monitoring - Insolvency' || merchant_name || ' - ' || creditor_id AS subject
 
 
         ) AS ticket
