@@ -138,5 +138,6 @@ select *
 
 
 from payload
+where date(most_recent_risk_label_created_at) >= CURRENT_DATE()-30
 limit 1
 
