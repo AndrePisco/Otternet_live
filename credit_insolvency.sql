@@ -43,6 +43,19 @@ select
 from dbt_core_model.x_payments
 group by 1)
 
+
+,history as (
+						SELECT 
+							runtime,
+							JSON_VALUE(values, '$.creditor_id') AS creditor_id,
+							JSON_VALUE(values, '$.ticket_id') AS ticket_id,
+							row_number() over (partition by JSON_VALUE(values, '$.creditor_id') order by runtime desc) as rowno
+
+						FROM `gc-prd-credit-risk-dev-81b5.otternet_dev.otternet_devlog` 
+						where length(JSON_VALUE(values, '$.creditor_id')) > 0 and process_name = 'credit_insolvency'
+						qualify rowno = 1
+)
+
 ----------------------------------------------------------------------------
 --Data Merge
 ----------------------------------------------------------------------------
@@ -64,11 +77,13 @@ select
 	,a.parent_account_id
   ,a.parent_account_name
 	,round(b.fds_exposure_current,1) as fds_exposure_current
-	,round(e.merchant_payment_amt_gbp_last_365d,1) as merchant_payment_amt_gbp_last_365d
+	,round(c.merchant_payment_amt_gbp_last_365d,1) as merchant_payment_amt_gbp_last_365d
+	,d.ticket_id
 
 from creditor_details  			as a 
 left join exposure   			as b on a.creditor_id=b.creditor_id
-left join creditor_payments     as e on a.creditor_id=e.creditor_id
+left join creditor_payments     as c on a.creditor_id=c.creditor_id
+left join history as d on a.creditor_id=d.creditor_id
 )
 
 
@@ -76,9 +91,8 @@ left join creditor_payments     as e on a.creditor_id=e.creditor_id
 select * 
 from data_merge
 where insolvency_flag is true
-and (fds_exposure_current >= 100000 
-or merchant_payment_amt_gbp_last_365d >= 1000000
-)
+-- and ticket_id is null
+and (fds_exposure_current >= 100000 or merchant_payment_amt_gbp_last_365d >= 1000000)
 )
 
 select * 
@@ -99,7 +113,7 @@ select *
                 value STRING
             >>[
                 -- Custom field entries
-                -- STRUCT(28480929, 'fraud__alerts_low'),  -- Category
+                STRUCT(28480929, 'credit__inactive_company')  -- Category
                 -- STRUCT(15542500163356, '12345')  -- Exposure
                 -- STRUCT(15545615128732, '123')  -- Fraud score (uncomment if needed)
 
@@ -130,7 +144,7 @@ select *
             ) AS comment,
 
             -- Subject
-            'Credit Monitoring - Insolvency' || merchant_name || ' - ' || creditor_id AS subject
+            'Credit Monitoring - Insolvency - ' || merchant_name || ' - ' || creditor_id AS subject
 
 
         ) AS ticket
@@ -139,5 +153,5 @@ select *
 
 from payload
 where date(most_recent_risk_label_created_at) >= CURRENT_DATE()-30
-limit 1
+limit 50
 
