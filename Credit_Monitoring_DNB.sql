@@ -119,11 +119,13 @@ left join creditor_payments                    as e on a.creditor_id=e.creditor_
 select * 
 ,case when (fds_exposure_current >= 250000 and db_failure_score_current < 40) or (nb_balance_current <= -20000) or (fds_exposure_current >= 500000) then 1 else 0 end as merchant_monitoring_qualifyer
 ,case when 
-		((db_failure_score_current >= 86) and (db_failure_score_change <= -20))
+		((db_failure_score_current >= 86) and (db_failure_score_change <= -30))
 		or 
-		((db_failure_score_current >= 51 and db_failure_score_current <= 85) and (db_failure_score_change <= -10))
+		((db_failure_score_current >= 51 and db_failure_score_current <= 85) and (db_failure_score_change <= -20))
 		or
-		((db_failure_score_current >= 11 and db_failure_score_current <= 50) and (db_failure_score_change <= -5))
+		((db_failure_score_current >= 30 and db_failure_score_current <= 50) and (db_failure_score_change <= -10))
+    or
+		((db_failure_score_current >= 11 and db_failure_score_current <= 29) and (db_failure_score_change <= -5))
 		or 
 		((db_failure_score_current >= 1 and db_failure_score_current <= 10) and (db_failure_score_change <= -2))
 		then "New Alert"
