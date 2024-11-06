@@ -173,30 +173,34 @@ FROM `gc-prd-bi-pdata-prod-94e7.dbt_zendesk.zendesk_tickets` as tickets
                     ,a.csm_owner_name
 
                     ,round(b.fds_exposure_current,1) as fds_exposure_current
+
+                    ,c.db_failure_score_current
+                    ,c.db_failure_score_current_date
+
+                    ,d.PD_score_latest
+                    ,d.prediction_calendar_date
+
+                    ,case when e.balance_amount_sum_gbp <0 then e.balance_amount_sum_gbp else 0 end as nb_balance_current
                     
-                    ,round(c.merchant_payment_amt_gbp_last_365d,1) as merchant_payment_amt_gbp_last_365d
-                    ,c.cb_rate_90days
-                    ,c.failure_rate_90days
-                    ,c.late_failure_rate_90days
-                    ,c.refund_rate_90days
+                    ,round(f.merchant_payment_amt_gbp_last_365d,1) as merchant_payment_amt_gbp_last_365d
+                    ,f.cb_rate_90days
+                    ,f.failure_rate_90days
+                    ,f.late_failure_rate_90days
+                    ,f.refund_rate_90days
 
-                    ,d.db_failure_score_current
-                    ,d.db_failure_score_current_date
 
-                    ,e.PD_score_latest
-                    ,e.prediction_calendar_date
-
-                    ,f.ticket_id
-                    ,f.created_at as ticket_created_at
-                    ,f.next_review_date
-                    ,f.reason_for_next_review
+                    ,g.ticket_id
+                    ,g.created_at as ticket_created_at
+                    ,g.next_review_date
+                    ,g.reason_for_next_review
 
                   from creditor_details  			    as a 
                   left join exposure   			      as b on a.creditor_id = b.creditor_id
-                  left join creditor_payments     as c on a.creditor_id = c.creditor_id
-                  left join db_failure            as d on d.creditor_id = a.creditor_id
-                  left join PD_score	            as e on a.creditor_id = e.creditor_id
-                  left join tickets               as f on a.organisation_id = f.organisation_id
+                  left join db_failure            as c on a.creditor_id = c.creditor_id
+                  left join PD_score	            as d on a.creditor_id = d.creditor_id
+                  left join creditor_balances     as e on a.creditor_id = e.creditor_id
+                  left join creditor_payments     as f on a.creditor_id = f.creditor_id
+                  left join tickets               as g on a.organisation_id = g.organisation_id
 )
 
 /******************************************************************************************************/
@@ -260,6 +264,9 @@ select *
 				|| '\n' || '**D&B Score date:** ' || COALESCE(cast(db_failure_score_current_date as string), 'N/A')
 				|| '\n' || '**Internal PD Score:** ' || COALESCE(cast(round(PD_score_latest,2) as string), 'N/A')
 				|| '\n' || '**Internal PD Score date:** ' || COALESCE(CAST(prediction_calendar_date AS STRING), 'N/A')
+
+        || '\n\n' || '**Negative Balance:**'
+				|| '\n' || '**Current Negative Balance:** £' || COALESCE(CAST(nb_balance_current AS STRING FORMAT '999,999,999.0'), 'N/A')
 
 				|| '\n\n' || '**Payment Information:**'
 				|| '\n' || '**FDS Exposure:** £' || COALESCE(CAST(fds_exposure_current AS STRING FORMAT '999,999,999.0'), 'N/A')
