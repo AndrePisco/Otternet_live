@@ -211,6 +211,11 @@ select * from data_merge
 where date(next_review_date) = current_date()
 )
 
+,stopper_flag as (
+	select count(*) as stopper_flag from payload
+)
+
+
 /******************************************************************************************************/
 /**************************************  Action Fields   **********************************************/
 /******************************************************************************************************/
@@ -295,3 +300,5 @@ select *
 
 
 from payload
+left join stopper_flag on creditor_id is not null
+where stopper_flag.stopper_flag <= 10
