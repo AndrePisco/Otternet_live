@@ -1,6 +1,8 @@
-
 with
 
+/******************************************************************************************************/
+/******************************************Creditor Details********************************************/
+/******************************************************************************************************/
 creditor_details as (
 select
 	a.id as creditor_id
@@ -21,13 +23,18 @@ select
   ,b.current_state
   ,b.parent_account_id
   ,b.parent_account_name
+	,b.is_cs_managed
+  ,b.csm_owner_name
 	,1 as var1
 from `gc-prd-bi-pdata-prod-94e7.dbt_core_model.d_creditor`  as a
 left join dbt_core_model.d_organisation as b
 on a.organisation_id = b.organisation_id
-where b.current_state != "preactive"  and date(most_recent_risk_label_created_at) >= date("2024-09-04")
-and not a.is_payment_provider)
+where not a.is_payment_provider)
 
+
+/******************************************************************************************************/
+/******************************************  FDS Exposure  ********************************************/
+/******************************************************************************************************/
 ,exposure as (
 select 
 	creditor_id
@@ -36,15 +43,98 @@ from `gc-prd-risk-prod-gdia.dbt_risk.d_fds_exposure`
 qualify row_number() over (partition by creditor_id order by calculated_at_date desc) =1)
 
 
-,creditor_payments as (
+/******************************************************************************************************/
+/******************************************   D&B Scores   ********************************************/
+/******************************************************************************************************/
+,db_failure as (
+select 
+    creditor_id
+    ,dnb_assessment.failure_score.national_percentile as db_failure_score_current
+    ,date(retrieved_at) as db_failure_score_current_date
+    ,row_number() over (partition by creditor_id order by retrieved_at desc) as rowno
+
+from  `gc-prd-risk-prod-gdia.dun_bradstreet_reports.dun_bradstreet_report__4` 
+where dnb_assessment.failure_score.national_percentile is not null
+qualify rowno = 1)
+
+
+/******************************************************************************************************/
+/******************************************   PD  Scores   ********************************************/
+/******************************************************************************************************/
+,PD_score as (
+select 
+  creditor_id
+  ,prediction_date
+  ,date(concat(substr(prediction_date,1,4),"-",substr(prediction_date,5,2),"-",substr(prediction_date,7,2))) as prediction_calendar_date
+  ,probability as PD_score_latest
+from `gc-prd-credit-risk-dev-81b5.pd_model.probability_of_default_model_predictions_historic`
+qualify row_number() over (partition by creditor_id order by prediction_date desc)= 1 )
+
+
+/******************************************************************************************************/
+/******************************************  NB Balances   ********************************************/
+/******************************************************************************************************/
+,creditor_balances as (
 select
+	 owner_id as creditor_id 
+	,calendar_date 
+	,sum(balance_amount_sum_gbp) as balance_amount_sum_gbp
+from `gc-prd-bi-pdata-prod-94e7.dbt_core_model.scd_abacus_available_merchant_funds_daily`
+where name = 'available_merchant_funds'
+and calendar_date = current_date()-1
+group by 1,2)
+
+
+/******************************************************************************************************/
+/******************************************    Payments    ********************************************/
+/******************************************************************************************************/
+,creditor_payments_temp as (select
 	creditor_id
-    ,sum(case when is_paid          and date(charge_date)       between current_date()-365   and current_date()-1    then amount_gbp          else 0 end) as merchant_payment_amt_gbp_last_365d
-from dbt_core_model.x_payments
+    ,sum(case when date(charge_date) between current_date() and current_date()+7 then amount_gbp else 0 end) as future_payments_7days
+
+    ,sum(case when is_paid and date(charge_date) between current_date()-30 and current_date()-1 then 1 else 0 end) as merchant_payment_vol_last_30d
+    ,sum(case when is_charged_back  and date(charged_back_date) between current_date()-30 and current_date()-1 then 1 else 0 end) as merchant_chargeback_vol_last_30d
+
+    ,sum(case when is_paid and date(charge_date) between current_date()-90 and current_date()-1 then 1 else 0 end) as merchant_payment_vol_last_90d
+    ,sum(case when is_charged_back  and date(charged_back_date) between current_date()-90 and current_date()-1 then 1 else 0 end) as merchant_chargeback_vol_last_90d
+    ,sum(case when is_failed and date(failed_or_late_failure_date) between current_date()-90 and current_date()-1 then 1 else 0 end) as merchant_failure_vol_last_90d
+    ,sum(case when is_late_failure and date(failed_or_late_failure_date) between current_date()-90 and current_date()-1 then 1 else 0 end) as merchant_late_failure_vol_last_90d
+    ,sum(case when is_refunded  and date(refund_created_at) between current_date()-90 and current_date()-1 then 1  else 0 end) as merchant_refund_vol_last_90d
+
+    ,sum(case when is_paid and date(charge_date)  between current_date()-365   and current_date()-1    then amount_gbp  else 0 end) as merchant_payment_amt_gbp_last_365d
+
+from `gc-prd-bi-pdata-prod-94e7.dbt_core_model.x_payments` 
+where 
+date(charge_date) between current_date()-365 and current_date()-1
+or date(charged_back_date) between current_date()-90 and current_date()-1
+or date(failed_or_late_failure_date) between current_date()-90 and current_date()-1
+or date(refund_created_at) between current_date()-90 and current_date()-1
+
 group by 1)
 
 
-,history as (
+,creditor_payments as (
+select
+	creditor_id
+
+	,future_payments_7days
+
+	,SAFE_DIVIDE(merchant_chargeback_vol_last_30d,merchant_payment_vol_last_30d) as cb_rate_30days
+
+	,SAFE_DIVIDE(merchant_chargeback_vol_last_90d,merchant_payment_vol_last_90d) as cb_rate_90days
+	,SAFE_DIVIDE(merchant_failure_vol_last_90d,merchant_payment_vol_last_90d) as failure_rate_90days
+	,SAFE_DIVIDE(merchant_late_failure_vol_last_90d,merchant_payment_vol_last_90d) as late_failure_rate_90days
+	,SAFE_DIVIDE(merchant_refund_vol_last_90d,merchant_payment_vol_last_90d) as refund_rate_90days
+
+	,merchant_payment_amt_gbp_last_365d
+
+	from creditor_payments_temp)
+
+
+/******************************************************************************************************/
+/******************************************    Existing Tickets    ********************************************/
+/******************************************************************************************************/
+,tickets as (
 						SELECT 
 							runtime,
 							JSON_VALUE(values, '$.creditor_id') AS creditor_id,
@@ -61,29 +151,49 @@ group by 1)
 ----------------------------------------------------------------------------
 
 ,data_merge as (
-select 
-	a.creditor_id 
-	,a.organisation_id
-	,a.merchant_name
-	,a.geo
-	,a.merchant_category_code
-	,a.merchant_category_code_description
-	,a.is_payment_provider
-	,a.account_type
-  ,a.merchant_risk_label
-	,a.merchant_risk_label_description
-	,date(a.most_recent_risk_label_created_at) as most_recent_risk_label_created_at
-	,a.insolvency_flag
-	,a.parent_account_id
-  ,a.parent_account_name
-	,round(b.fds_exposure_current,1) as fds_exposure_current
-	,round(c.merchant_payment_amt_gbp_last_365d,1) as merchant_payment_amt_gbp_last_365d
-	,d.ticket_id
+                  select 
+                    a.creditor_id 
+                    ,a.organisation_id
+                    ,a.merchant_name
+                    ,a.geo
+                    ,a.merchant_category_code
+                    ,a.merchant_category_code_description
+                    ,a.is_payment_provider
+                    ,a.account_type
+                    ,a.merchant_risk_label
+                    ,a.merchant_risk_label_description
+                    ,date(a.most_recent_risk_label_created_at) as most_recent_risk_label_created_at
+                    ,a.insolvency_flag
+                    ,a.parent_account_id
+                    ,a.parent_account_name
+                    ,a.is_cs_managed
+                    ,a.csm_owner_name
 
-from creditor_details  			as a 
-left join exposure   			as b on a.creditor_id=b.creditor_id
-left join creditor_payments     as c on a.creditor_id=c.creditor_id
-left join history as d on a.creditor_id=d.creditor_id
+                    ,round(b.fds_exposure_current,1) as fds_exposure_current
+
+                    ,c.db_failure_score_current
+                    ,c.db_failure_score_current_date
+
+                    ,d.PD_score_latest
+                    ,d.prediction_calendar_date
+
+                    ,case when e.balance_amount_sum_gbp <0 then e.balance_amount_sum_gbp else 0 end as nb_balance_current
+                    
+                    ,round(f.merchant_payment_amt_gbp_last_365d,1) as merchant_payment_amt_gbp_last_365d
+                    ,f.cb_rate_90days
+                    ,f.failure_rate_90days
+                    ,f.late_failure_rate_90days
+                    ,f.refund_rate_90days
+
+	                  ,g.ticket_id
+
+                  from creditor_details  			    as a 
+                  left join exposure   			      as b on a.creditor_id = b.creditor_id
+                  left join db_failure            as c on a.creditor_id = c.creditor_id
+                  left join PD_score	            as d on a.creditor_id = d.creditor_id
+                  left join creditor_balances     as e on a.creditor_id = e.creditor_id
+                  left join creditor_payments     as f on a.creditor_id = f.creditor_id
+                  left join tickets               as g on a.creditor_id = g.creditor_id
 )
 
 
@@ -121,24 +231,44 @@ select *
 
             -- Comment object
             STRUCT(
-                'Creditor ID: ' || creditor_id 
-								||'\n' || 'Organisation ID: ' || organisation_id
-								||'\n' || 'Merchant name: ' || merchant_name
-								||'\n' || 'Geo: ' || geo
-								||'\n' || 'MCC: ' || merchant_category_code_description
-								||'\n' || 'Payment provider: ' || is_payment_provider
-								||'\n' || 'Insolvency flag: ' || merchant_risk_label_description
-								||'\n' || 'Risk Label Date: ' || most_recent_risk_label_created_at
-								||'\n' || 'Parent ID: ' || parent_account_id
-								||'\n' || 'Parent Name: ' || parent_account_name
-								||'\n' || 'Account Type: ' || account_type
-								
-								||'\n' || 'Payments last 12m: ' || round(merchant_payment_amt_gbp_last_365d,2)
-								||'\n' || 'FDS Exposure: ' || round(fds_exposure_current,2)
-								-- ||'\n' || ': ' || xxxx
-								-- ||'\n' || ': ' || xxxx
-								-- ||'\n' || ': ' || xxxx
-								||'\n' || '\n' || '\n' || 'Created by OtterNet'
+				'**Merchant Details:**'
+				|| '\n' || '**Creditor ID:** [' || COALESCE(creditor_id, 'N/A') || '](https://manage.gocardless.com/admin/creditors/' || COALESCE(creditor_id, 'N/A') || ')'
+				|| '\n' || '**Organisation ID:** ' || COALESCE(organisation_id, 'N/A')
+				|| '\n' || '**Merchant name:** ' || COALESCE(merchant_name, 'N/A')
+				|| '\n' || '**Geo:** ' || COALESCE(geo, 'N/A')
+				|| '\n' || '**MCC:** ' || COALESCE(merchant_category_code_description, 'N/A')
+				|| '\n' || '**Payment provider:** ' || COALESCE(cast(is_payment_provider as string), 'N/A')
+				|| '\n' || '**Account Type:** ' || COALESCE(account_type, 'N/A')
+				|| '\n' || '**CS Managed:** ' || COALESCE(cast(is_cs_managed as string), 'N/A')
+				|| '\n' || '**CS Manager Name:** ' || COALESCE(csm_owner_name, 'N/A')
+
+				|| '\n\n' || '**Parent Information:**'
+				|| '\n' || '**Parent ID:** ' || COALESCE(parent_account_id, 'N/A')
+				|| '\n' || '**Parent Name:** ' || COALESCE(parent_account_name, 'N/A')
+
+				|| '\n\n' || '**Risk Labels:**'
+				|| '\n' || '**Risk Label:** ' || COALESCE(merchant_risk_label_description, 'N/A')
+				|| '\n' || '**Risk Label Date:** ' || COALESCE(cast(date(most_recent_risk_label_created_at) as string), 'N/A')
+
+				|| '\n\n' || '**Failure Score:**'
+				|| '\n' || '**D&B Score:** ' || COALESCE(cast(db_failure_score_current as string), 'N/A')
+				|| '\n' || '**D&B Score date:** ' || COALESCE(cast(db_failure_score_current_date as string), 'N/A')
+				|| '\n' || '**Internal PD Score:** ' || COALESCE(cast(round(PD_score_latest,2) as string), 'N/A')
+				|| '\n' || '**Internal PD Score date:** ' || COALESCE(CAST(prediction_calendar_date AS STRING), 'N/A')
+
+        || '\n\n' || '**Negative Balance:**'
+				|| '\n' || '**Current Negative Balance:** £' || COALESCE(CAST(nb_balance_current AS STRING FORMAT '999,999,999.0'), 'N/A')
+
+				|| '\n\n' || '**Payment Information:**'
+				|| '\n' || '**FDS Exposure:** £' || COALESCE(CAST(fds_exposure_current AS STRING FORMAT '999,999,999.0'), 'N/A')
+				|| '\n' || '**Payments last 12m:** £' || COALESCE(CAST(merchant_payment_amt_gbp_last_365d AS STRING FORMAT '999,999,999.0'), 'N/A')
+				|| '\n' || '**Chargeback rate (90days):** ' || COALESCE(CAST(cb_rate_90days * 100 AS STRING FORMAT '999,999,999.00'), 'N/A') || '%'
+				|| '\n' || '**Failure rate (90days):** ' || COALESCE(CAST(failure_rate_90days * 100 AS STRING FORMAT '999,999,999.00'), 'N/A') || '%'
+				|| '\n' || '**Late Failure rate (90days):** ' || COALESCE(CAST(late_failure_rate_90days * 100 AS STRING FORMAT '999,999,999.00'), 'N/A') || '%'
+				|| '\n' || '**Refund rate (90days):** ' || COALESCE(CAST(refund_rate_90days * 100 AS STRING FORMAT '999,999,999.00'), 'N/A') || '%'
+
+				|| '\n\n' || '**Link to underwriter’s dashboard:** [Underwriter Dashboard](https://looker.gocardless.io/dashboards/3505?Organisation+ID=' || COALESCE(organisation_id, 'N/A') || '&Creditor+ID=&Company+Number=)'
+				|| '\n\n\n' || 'Created by OtterNet'
 								 AS body,
                 false AS public
             ) AS comment,
@@ -154,4 +284,3 @@ select *
 from payload
 where date(most_recent_risk_label_created_at) >= CURRENT_DATE()-30
 limit 50
-
