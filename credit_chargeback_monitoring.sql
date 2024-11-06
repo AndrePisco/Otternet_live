@@ -161,7 +161,7 @@ select
 /******************************************************************************************************/
 /*************************************  Historical Cases  *********************************************/
 /******************************************************************************************************/
-,chargeback_monitoring_tickets as (
+,tickets as (
 																		select
 																				JSON_VALUE(values, "$.creditor_id") AS creditor_id
 																				,JSON_VALUE(values, "$.ticket_id") AS ticket_id
@@ -182,72 +182,72 @@ select
 /******************************************  Data Merge  **********************************************/
 /******************************************************************************************************/
 ,data_merge as (
-select 
-	a.creditor_id 
-	,a.organisation_id
-	,a.merchant_name
-	,a.geo
-	,a.merchant_category_code
-	,a.merchant_category_code_description
-	,a.is_payment_provider
-	,a.account_type
-  ,a.merchant_risk_label
-	,a.merchant_risk_label_description
-	,a.most_recent_risk_label_created_at
-	,a.insolvency_flag
-  ,a.current_state
-  ,a.is_cs_managed
-	,a.csm_owner_name
-  ,a.parent_account_id
-  ,a.parent_account_name
+                  select 
+                    a.creditor_id 
+                    ,a.organisation_id
+                    ,a.merchant_name
+                    ,a.geo
+                    ,a.merchant_category_code
+                    ,a.merchant_category_code_description
+                    ,a.is_payment_provider
+                    ,a.account_type
+                    ,a.merchant_risk_label
+                    ,a.merchant_risk_label_description
+                    ,date(a.most_recent_risk_label_created_at) as most_recent_risk_label_created_at
+                    ,a.insolvency_flag
+                    ,a.parent_account_id
+                    ,a.parent_account_name
+                    ,a.is_cs_managed
+                    ,a.csm_owner_name
 
-	,b.fds_exposure_current
+                    ,round(b.fds_exposure_current,1) as fds_exposure_current
 
-	,c.db_failure_score_current
-	,c.db_failure_score_current_date
-    
-	,case when d.balance_amount_sum_gbp <0 then d.balance_amount_sum_gbp else 0 end as nb_balance_current
+                    ,c.db_failure_score_current
+                    ,c.db_failure_score_current_date
 
-	,e.cb_rate_30days
-	,e.merchant_payment_amt_gbp_last_365d
-	,e.cb_rate_90days
-	,e.failure_rate_90days as failure_rate_90days
-	,e.late_failure_rate_90days as late_failure_rate_90days
-	,e.refund_rate_90days as refund_rate_90days
-	
-	,f.mcc_payment_vol_last_12m
-	,f.mcc_payment_amt_last_12m
-	,f.mcc_chargeback_vol_last_12m
-	,f.mcc_chargeback_amt_last_12m
-	,f.mcc_chargeback_rate_vol_last_12m
+                    ,d.PD_score_latest
+                    ,d.prediction_calendar_date
 
-	,g.portfolio_payment_vol_last_12m
-	,g.portfolio_payment_amt_last_12m
-	,g.portfolio_chargeback_vol_last_12m
-	,g.portfolio_chargeback_amt_last_12m
-	,g.portfolio_chargeback_rate_vol_last_12m
+                    ,case when e.balance_amount_sum_gbp <0 then e.balance_amount_sum_gbp else 0 end as nb_balance_current
+                    
+                    ,round(f.merchant_payment_amt_gbp_last_365d,1) as merchant_payment_amt_gbp_last_365d
+                    ,f.cb_rate_90days
+                    ,f.failure_rate_90days
+                    ,f.late_failure_rate_90days
+                    ,f.refund_rate_90days
+                    ,f.cb_rate_30days
 
-  ,case when f.mcc_chargeback_vol_last_12m >= 1000 then f.mcc_chargeback_rate_vol_last_12m else portfolio_chargeback_rate_vol_last_12m end as reference_cb_rate
+                    ,g.mcc_payment_vol_last_12m
+                    ,g.mcc_payment_amt_last_12m
+                    ,g.mcc_chargeback_vol_last_12m
+                    ,g.mcc_chargeback_amt_last_12m
+                    ,g.mcc_chargeback_rate_vol_last_12m
 
-  ,h.ticket_id
-  ,h.chargeback_monitoring_rate_last
-  ,h.chargeback_monitoring_date_last
-  ,h.chargeback_monitoring_days_since
-  ,h.chargeback_monitoring_trigger_last
+                    ,h.portfolio_payment_vol_last_12m
+                    ,h.portfolio_payment_amt_last_12m
+                    ,h.portfolio_chargeback_vol_last_12m
+                    ,h.portfolio_chargeback_amt_last_12m
+                    ,h.portfolio_chargeback_rate_vol_last_12m
 
-	,i.PD_score_latest
-	,i.prediction_calendar_date
+                  ,case when g.mcc_chargeback_vol_last_12m >= 1000 then g.mcc_chargeback_rate_vol_last_12m else h.portfolio_chargeback_rate_vol_last_12m end as reference_cb_rate
+
+                    ,i.ticket_id
+                    ,i.chargeback_monitoring_rate_last
+                    ,i.chargeback_monitoring_date_last
+                    ,i.chargeback_monitoring_days_since
+                    ,i.chargeback_monitoring_trigger_last
 
 
-from creditor_details  			               as a 
-left join exposure   			               as b on a.creditor_id=b.creditor_id
-left join db_failure 			               as c on a.creditor_id=c.creditor_id
-left join creditor_balances		               as d on a.creditor_id=d.creditor_id
-left join creditor_payments                    as e on a.creditor_id=e.creditor_id
-left join mcc_payments			               as f on a.merchant_category_code=f.merchant_category_code
-left join portfolio_payments                   as g on a.var1=g.var1
-left join chargeback_monitoring_tickets  	   as h on a.creditor_id=h.creditor_id
-left join PD_score													as i on a.creditor_id=i.creditor_id
+                  from creditor_details  			    as a 
+                  left join exposure   			      as b on a.creditor_id = b.creditor_id
+                  left join db_failure            as c on a.creditor_id = c.creditor_id
+                  left join PD_score	            as d on a.creditor_id = d.creditor_id
+                  left join creditor_balances     as e on a.creditor_id = e.creditor_id
+                  left join creditor_payments     as f on a.creditor_id = f.creditor_id
+
+                  left join mcc_payments			    as g on a.merchant_category_code = g.merchant_category_code
+                  left join portfolio_payments    as h on a.var1 = h.var1
+                  left join tickets  	            as i on a.creditor_id = i.creditor_id
 )
 
 
