@@ -264,12 +264,6 @@ select *
 	  end as chargeback_monitoring_alert
 from data_merge)
 
-,stopper_flag as (
-	select count(*) as stopper_flag from payload
-	where merchant_monitoring_qualifyer = 1 
-	AND chargeback_monitoring_alert IN ("New Alert","Chargeback Rate Increase >10% since last trigger","Chargeback Rate Re-Trigger after 90 days")
-)
-
 
 /******************************************************************************************************/
 /**************************************  Action Fields   **********************************************/
@@ -358,7 +352,5 @@ SELECT *
 		) AS ticket
 	)) AS ActionField_ZendeskCreateTicket
 FROM payload
-left join stopper_flag on creditor_id is not null
 WHERE merchant_monitoring_qualifyer = 1 
 AND chargeback_monitoring_alert IN ("New Alert","Chargeback Rate Increase >10% since last trigger","Chargeback Rate Re-Trigger after 90 days")
-and stopper_flag.stopper_flag <= 50
