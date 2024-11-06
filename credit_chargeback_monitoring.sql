@@ -321,6 +321,9 @@ SELECT *
 				|| '\n' || '**Internal PD Score:** ' || COALESCE(cast(round(PD_score_latest,2) as string), 'N/A')
 				|| '\n' || '**Internal PD Score date:** ' || COALESCE(CAST(prediction_calendar_date AS STRING), 'N/A')
 
+        || '\n\n' || '**Negative Balance:**'
+				|| '\n' || '**Current Negative Balance:** £' || COALESCE(CAST(nb_balance_current AS STRING FORMAT '999,999,999.0'), 'N/A')
+
 				|| '\n\n' || '**Payment Information:**'
 				|| '\n' || '**FDS Exposure:** £' || COALESCE(CAST(fds_exposure_current AS STRING FORMAT '999,999,999.0'), 'N/A')
 				|| '\n' || '**Payments last 12m:** £' || COALESCE(CAST(merchant_payment_amt_gbp_last_365d AS STRING FORMAT '999,999,999.0'), 'N/A')
@@ -359,5 +362,3 @@ left join stopper_flag on creditor_id is not null
 WHERE merchant_monitoring_qualifyer = 1 
 AND chargeback_monitoring_alert IN ("New Alert","Chargeback Rate Increase >10% since last trigger","Chargeback Rate Re-Trigger after 90 days")
 and stopper_flag.stopper_flag <= 50
-
-
