@@ -216,6 +216,15 @@ select *
 from data_merge
 )
 
+,stopper_flag as (
+	select count(*) as stopper_flag from payload
+  where merchant_monitoring_qualifyer = 1 
+			and failure_score_monitoring_alert = "New Alert"
+			and insolvency_flag = false
+			and date(db_failure_score_current_date) = CURRENT_DATE()-1
+)
+
+
 /******************************************************************************************************/
 /**************************************  Action Fields   **********************************************/
 /******************************************************************************************************/
@@ -298,7 +307,9 @@ select *
 
 
 from payload
+left join stopper_flag on creditor_id is not null
 where merchant_monitoring_qualifyer = 1 
 			and failure_score_monitoring_alert = "New Alert"
 			and insolvency_flag = false
 			and date(db_failure_score_current_date) = CURRENT_DATE()-1
+and stopper_flag.stopper_flag <= 50
