@@ -120,6 +120,7 @@ select
 	,future_payments_7days
 
 	,SAFE_DIVIDE(merchant_chargeback_vol_last_30d,merchant_payment_vol_last_30d) as cb_rate_30days
+  ,merchant_chargeback_vol_last_30d
 
 	,SAFE_DIVIDE(merchant_chargeback_vol_last_90d,merchant_payment_vol_last_90d) as cb_rate_90days
 	,SAFE_DIVIDE(merchant_failure_vol_last_90d,merchant_payment_vol_last_90d) as failure_rate_90days
@@ -166,6 +167,7 @@ select
 																				JSON_VALUE(values, "$.creditor_id") AS creditor_id
 																				,JSON_VALUE(values, "$.ticket_id") AS ticket_id
 																				,cast(JSON_VALUE(values, "$.cb_rate_30days") as FLOAT64) AS chargeback_monitoring_rate_last
+                                        ,cast(JSON_VALUE(values, "$.merchant_chargeback_vol_last_30d") as FLOAT64) AS merchant_chargeback_vol_last_30d_previous_trigger
 																				,date(runtime) AS chargeback_monitoring_date_last
 																				,date_diff(current_date(),date(runtime),day) AS chargeback_monitoring_days_since
 																				,true AS chargeback_monitoring_trigger_last
@@ -216,6 +218,7 @@ select
                     ,f.late_failure_rate_90days
                     ,f.refund_rate_90days
                     ,f.cb_rate_30days
+                    ,f.merchant_chargeback_vol_last_30d
 
                     ,g.mcc_payment_vol_last_12m
                     ,g.mcc_payment_amt_last_12m
@@ -236,6 +239,7 @@ select
                     ,i.chargeback_monitoring_date_last
                     ,i.chargeback_monitoring_days_since
                     ,i.chargeback_monitoring_trigger_last
+                    ,i.merchant_chargeback_vol_last_30d_previous_trigger
 
 
                   from creditor_details  			    as a 
@@ -258,7 +262,7 @@ select
 select * 
 ,case when (fds_exposure_current >= 250000 and db_failure_score_current < 40) or (nb_balance_current <= -20000) or (fds_exposure_current >= 500000) then 1 else 0 end as merchant_monitoring_qualifyer
 ,case when (cb_rate_30days - reference_cb_rate >= 0.04) and chargeback_monitoring_trigger_last is null then "New Alert"
-      when (cb_rate_30days - chargeback_monitoring_rate_last >= 0.1) and chargeback_monitoring_trigger_last = true then "Chargeback Rate Increase >10% since last trigger"
+      when (cb_rate_30days - chargeback_monitoring_rate_last >= 0.1) and (merchant_chargeback_vol_last_30d_previous_trigger is null or merchant_chargeback_vol_last_30d_previous_trigger < merchant_chargeback_vol_last_30d) and chargeback_monitoring_trigger_last = true then "Chargeback Rate Increase >10% since last trigger"
       when (cb_rate_30days - reference_cb_rate >= 0.04) and chargeback_monitoring_trigger_last = true and chargeback_monitoring_days_since >= 90 then "Chargeback Rate Re-Trigger after 90 days"
 	  else "No Alert"
 	  end as chargeback_monitoring_alert
