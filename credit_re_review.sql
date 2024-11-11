@@ -278,8 +278,8 @@ select *
 				|| '\n' || '**Refund rate (90days):** ' || COALESCE(CAST(refund_rate_90days * 100 AS STRING FORMAT '999,999,999.00'), 'N/A') || '%'
 
 		    || '\n\n' || '**Original ticket created at:** ' || date(ticket_created_at)
-		    || '\n' || '**Previous ticket link here:** [' || ticket_id  || '](https://gocardless.zendesk.com/agent/tickets/' || ticket_id || ')'
-        || '\n' || '**Stated review reason:** ' || reason_for_next_review
+		    || '\n' || '**Previous ticket link here:** [' || COALESCE(ticket_id, 0)  || '](https://gocardless.zendesk.com/agent/tickets/' || COALESCE(ticket_id, 0)  || ')'
+        || '\n' || '**Stated review reason:** ' || COALESCE(reason_for_next_review, 'N/A') 
 
 				|| '\n\n' || '**Link to underwriter’s dashboard:** [Underwriter Dashboard](https://looker.gocardless.io/dashboards/3505?Organisation+ID=' || COALESCE(organisation_id, 'N/A') || '&Creditor+ID=&Company+Number=)'
 				|| '\n\n\n' || 'Created by OtterNet'
