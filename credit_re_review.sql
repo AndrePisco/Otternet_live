@@ -194,13 +194,16 @@ FROM `gc-prd-bi-pdata-prod-94e7.dbt_zendesk.zendesk_tickets` as tickets
                     ,g.next_review_date
                     ,g.reason_for_next_review
 
-                  from creditor_details  			    as a 
+                  from tickets as g
+                  left join creditor_details  	  as a on a.organisation_id = g.organisation_id
                   left join exposure   			      as b on a.creditor_id = b.creditor_id
                   left join db_failure            as c on a.creditor_id = c.creditor_id
                   left join PD_score	            as d on a.creditor_id = d.creditor_id
                   left join creditor_balances     as e on a.creditor_id = e.creditor_id
                   left join creditor_payments     as f on a.creditor_id = f.creditor_id
-                  left join tickets               as g on a.organisation_id = g.organisation_id
+
+
+
 )
 
 /******************************************************************************************************/
