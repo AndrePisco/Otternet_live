@@ -341,8 +341,8 @@ SELECT *
 				|| '\n' || '**Date Last Trigger:** ' || COALESCE(cast(date(chargeback_monitoring_date_last) as string), 'N/A') 
 				|| '\n' || '**Days Since Last Trigger:** ' || COALESCE(cast(chargeback_monitoring_days_since as string), 'N/A') 				
 				ELSE 
-				'\n' || '**CB Rate:** ' || COALESCE(CAST(cb_rate_30days AS STRING FORMAT '999,999,999.00'), 'N/A') || '%'
-				|| '\n' || '**Reference CB Rate:** ' || COALESCE(CAST(reference_cb_rate AS STRING FORMAT '999,999,999.00'), 'N/A') || '%'				
+				'\n' || '**CB Rate:** ' || COALESCE(CAST(cb_rate_30days * 100 AS STRING FORMAT '999,999,999.00'), 'N/A') || '%'
+				|| '\n' || '**Reference CB Rate:** ' || COALESCE(CAST(reference_cb_rate * 100 AS STRING FORMAT '999,999,999.00'), 'N/A') || '%'				
 				END
 
 				|| '\n\n' || '**Link to underwriter’s dashboard:** [Underwriter Dashboard](https://looker.gocardless.io/dashboards/3505?Organisation+ID=' || COALESCE(organisation_id, 'N/A') || '&Creditor+ID=&Company+Number=)'
