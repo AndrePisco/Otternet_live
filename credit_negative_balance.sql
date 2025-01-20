@@ -2,7 +2,7 @@ with
 
 /******************************************************************************************************/
 /******************************************Creditor Details********************************************/
-/******************************************************************************************************/
+/*******************************************************************************************************/
 creditor_details as (
 select
 	a.id as creditor_id
@@ -90,26 +90,26 @@ group by 1,2)
 /******************************************************************************************************/
 ,creditor_payments_temp as (select
 	creditor_id
-    ,sum(case when date(charge_date) between current_date() and current_date()+7 then amount_gbp else 0 end) as future_payments_7days
+    ,sum(case when date(last_charge_date) between current_date() and current_date()+7 then amount_gbp else 0 end) as future_payments_7days
 
-    ,sum(case when is_paid and date(charge_date) between current_date()-30 and current_date()-1 then 1 else 0 end) as merchant_payment_vol_last_30d
-    ,sum(case when is_charged_back  and date(charged_back_date) between current_date()-30 and current_date()-1 then 1 else 0 end) as merchant_chargeback_vol_last_30d
+    ,sum(case when is_paid and date(last_charge_date) between current_date()-30 and current_date()-1 then 1 else 0 end) as merchant_payment_vol_last_30d
+    ,sum(case when is_charged_back  and date(last_charged_back_at) between current_date()-30 and current_date()-1 then 1 else 0 end) as merchant_chargeback_vol_last_30d
 
-    ,sum(case when is_paid and date(charge_date) between current_date()-90 and current_date()-1 then 1 else 0 end) as merchant_payment_vol_last_90d
-    ,sum(case when is_charged_back  and date(charged_back_date) between current_date()-90 and current_date()-1 then 1 else 0 end) as merchant_chargeback_vol_last_90d
-    ,sum(case when is_failed and date(failed_or_late_failure_date) between current_date()-90 and current_date()-1 then 1 else 0 end) as merchant_failure_vol_last_90d
-    ,sum(case when is_late_failure and date(failed_or_late_failure_date) between current_date()-90 and current_date()-1 then 1 else 0 end) as merchant_late_failure_vol_last_90d
-    ,sum(case when is_refunded  and date(refund_created_at) between current_date()-90 and current_date()-1 then 1  else 0 end) as merchant_refund_vol_last_90d
+    ,sum(case when is_paid and date(last_charge_date) between current_date()-90 and current_date()-1 then 1 else 0 end) as merchant_payment_vol_last_90d
+    ,sum(case when is_charged_back  and date(last_charged_back_at) between current_date()-90 and current_date()-1 then 1 else 0 end) as merchant_chargeback_vol_last_90d
+    ,sum(case when is_failed_or_late_failed and date(last_failed_or_late_failure_at) between current_date()-90 and current_date()-1 then 1 else 0 end) as merchant_failure_vol_last_90d
+    ,sum(case when is_failed_or_late_failed and date(last_failed_or_late_failure_at) between current_date()-90 and current_date()-1 then 1 else 0 end) as merchant_late_failure_vol_last_90d
+    ,sum(case when is_refund_paid_out  and date(last_refund_created_at) between current_date()-90 and current_date()-1 then 1  else 0 end) as merchant_refund_vol_last_90d
 
-    ,sum(case when is_paid and date(charge_date)  between current_date()-365   and current_date()-1    then amount_gbp  else 0 end) as merchant_payment_amt_gbp_last_365d
-    ,max(date_diff(current_date(),date(charge_date),day)) as last_payment_days_ago
+    ,sum(case when is_paid and date(last_charge_date)  between current_date()-365   and current_date()-1    then amount_gbp  else 0 end) as merchant_payment_amt_gbp_last_365d
+    ,max(date_diff(current_date(),date(last_charge_date),day)) as last_payment_days_ago
 
-from `gc-prd-bi-pdata-prod-94e7.dbt_core_model.x_payments` 
+from `gc-prd-payment-proc-prod-6639.dbt_payment_processing_data_products.denorm_payments_v1` 
 where 
-date(charge_date) between current_date()-365 and current_date()-1
-or date(charged_back_date) between current_date()-90 and current_date()-1
-or date(failed_or_late_failure_date) between current_date()-90 and current_date()-1
-or date(refund_created_at) between current_date()-90 and current_date()-1
+date(last_charge_date) between current_date()-365 and current_date()-1
+or date(last_charged_back_at) between current_date()-90 and current_date()-1
+or date(last_failed_or_late_failure_at) between current_date()-90 and current_date()-1
+or date(last_refund_created_at) between current_date()-90 and current_date()-1
 
 group by 1)
 
@@ -318,4 +318,3 @@ select *
 
 from payload
 where nb_alert_type != 'No Alert'
-
