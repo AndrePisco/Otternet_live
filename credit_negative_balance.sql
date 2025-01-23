@@ -102,7 +102,7 @@ group by 1,2)
     ,sum(case when is_refund_paid_out  and date(last_refund_created_at) between current_date()-90 and current_date()-1 then 1  else 0 end) as merchant_refund_vol_last_90d
 
     ,sum(case when is_paid and date(last_charge_date)  between current_date()-365   and current_date()-1    then amount_gbp  else 0 end) as merchant_payment_amt_gbp_last_365d
-    ,max(date_diff(current_date(),date(last_charge_date),day)) as last_payment_days_ago
+    ,min(date_diff(current_date(),date(last_charge_date),day)) as last_payment_days_ago
 
 from `gc-prd-payment-proc-prod-6639.dbt_payment_processing_data_products.denorm_payments_v1` 
 where 
